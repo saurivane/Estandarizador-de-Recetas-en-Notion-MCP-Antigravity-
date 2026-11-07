@@ -1,0 +1,32 @@
+# Archivos de entorno y credenciales sensibles
+.env
+.env.local
+.env.*.local
+
+# Control de estado de ejecución local (opcional, ignora el historial de semanas de tu máquina)
+weekly_state.json
+batch_spec.json
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Entornos virtuales
+env/
+venv/
+.venv/
+ENV/
+
+# Carpetas de IDEs y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
