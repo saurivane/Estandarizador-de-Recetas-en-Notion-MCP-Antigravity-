@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Archivo de exportación local para Drive
+recetas_completas.md
+
 # Control de estado de ejecución local (opcional, ignora el historial de semanas de tu máquina)
 weekly_state.json
 batch_spec.json

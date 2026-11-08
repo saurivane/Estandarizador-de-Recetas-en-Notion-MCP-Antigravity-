@@ -8,6 +8,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 import urllib.error
@@ -18,6 +19,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, '.env')
 STATE_PATH = os.path.join(BASE_DIR, 'weekly_state.json')
+EXPORT_FILE_PATH = os.path.join(BASE_DIR, 'recetas_completas.md')
 
 
 def load_config():
@@ -31,7 +33,8 @@ def load_config():
                     env[k.strip()] = v.strip()
     token = os.environ.get('NOTION_TOKEN') or env.get('NOTION_TOKEN', '')
     db_id = os.environ.get('NOTION_DATABASE_ID') or env.get('NOTION_DATABASE_ID', '')
-    return token, db_id
+    gdrive_file_id = os.environ.get('GDRIVE_FILE_ID') or env.get('GDRIVE_FILE_ID', '')
+    return token, db_id, gdrive_file_id
 
 
 def current_iso_week():
@@ -271,8 +274,99 @@ def build_blocks(rec):
     return blocks
 
 
+def sync_to_gdrive(token, db_id, gdrive_file_id):
+    if not gdrive_file_id:
+        return {'status': 'SKIPPED', 'reason': 'GDRIVE_FILE_ID not set'}
+    try:
+        # 1. Fetch all processed recipes
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
+        query_body = {
+            'filter': {'property': 'Procesado', 'checkbox': {'equals': True}},
+            'sorts': [{'property': 'Fecha de creación', 'direction': 'ascending'}],
+            'page_size': 100
+        }
+        req = urllib.request.Request(
+            f'https://api.notion.com/v1/databases/{db_id}/query',
+            data=json.dumps(query_body).encode('utf-8'),
+            headers=headers,
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+
+        def get_blocks(block_id):
+            r = urllib.request.Request(f'https://api.notion.com/v1/blocks/{block_id}/children?page_size=100', headers=headers)
+            with urllib.request.urlopen(r, timeout=15) as rp:
+                blks = json.loads(rp.read().decode('utf-8')).get('results', [])
+            return blks
+
+        all_recipes = []
+        for p in data.get('results', []):
+            props = p.get('properties', {})
+            title = ''.join(x.get('plain_text', '') for x in props.get('Name', {}).get('title', []))
+            if not title or title.startswith('📌'):
+                continue
+            cats = [x['name'] for x in props.get('Categorías', {}).get('multi_select', [])]
+            ings = [x['name'] for x in props.get('Ingredientes', {}).get('multi_select', [])]
+            link = props.get('Link', {}).get('url', '')
+            lines = [f"# {title}"]
+            if cats:
+                lines.append(f"**Categorías:** {', '.join(cats)}")
+            if ings:
+                lines.append(f"**Ingredientes clave:** {', '.join(ings)}")
+            if link:
+                lines.append(f"**Enlace original:** {link}")
+            lines.append("")
+
+            blocks = get_blocks(p['id'])
+            for b in blocks:
+                btype = b['type']
+                info = b.get(btype, {})
+                rt = info.get('rich_text', [])
+                text = "".join(x.get('plain_text', '') for x in rt)
+                if btype == 'heading_1':
+                    lines.append(f"## {text}")
+                elif btype == 'heading_2':
+                    lines.append(f"### {text}")
+                elif btype == 'heading_3':
+                    lines.append(f"#### {text}")
+                elif btype == 'bulleted_list_item':
+                    lines.append(f"- {text}")
+                elif btype == 'numbered_list_item':
+                    lines.append(f"1. {text}")
+                elif btype == 'paragraph' and text:
+                    lines.append(f"{text}")
+                elif btype == 'callout':
+                    lines.append(f"> 💡 {text}")
+            lines.append("\n---\n")
+            all_recipes.append("\n".join(lines))
+
+        full_doc = f"# 🍳 Mi Recetario de Notion (Sincronizado)\n\n*Documento generado automáticamente para consulta en NotebookLM y Gemini.*\n*Total de recetas:* {len(all_recipes)}\n\n---\n\n" + "\n".join(all_recipes)
+        with open(EXPORT_FILE_PATH, 'w', encoding='utf-8') as f:
+            f.write(full_doc)
+
+        # 2. Update file in Google Drive via gdrive CLI
+        res = subprocess.run(
+            ['gdrive', 'mutate', 'update', gdrive_file_id, EXPORT_FILE_PATH],
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        return {
+            'status': 'SUCCESS' if res.returncode == 0 else 'ERROR',
+            'output': res.stdout.strip(),
+            'error': res.stderr.strip()
+        }
+    except Exception as e:
+        return {'status': 'ERROR', 'error': str(e)}
+
+
 def apply_weekly_batch(records, mark_week_done=True):
-    token, _ = load_config()
+    token, db_id, gdrive_file_id = load_config()
     if not token:
         return {'status': 'ERROR_MISSING_TOKEN', 'message': 'Falta NOTION_TOKEN'}
     updated = []
@@ -312,10 +406,13 @@ def apply_weekly_batch(records, mark_week_done=True):
         with open(STATE_PATH, 'w', encoding='utf-8') as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
 
+    drive_sync_res = sync_to_gdrive(token, db_id, gdrive_file_id)
+
     return {
         'status': 'SUCCESS',
         'week_marked': week_key if mark_week_done else None,
-        'updated_records': updated
+        'updated_records': updated,
+        'gdrive_sync': drive_sync_res
     }
 
 

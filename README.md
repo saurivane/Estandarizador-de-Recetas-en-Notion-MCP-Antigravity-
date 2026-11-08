@@ -1,8 +1,8 @@
 # 🍳 Estandarizador de Recetas en Notion (MCP + Antigravity)
 
-Automatización inteligente para estandarizar recetas en Notion guardadas directamente desde YouTube Shorts, vídeos o páginas web.
+Automatización inteligente para estandarizar recetas en Notion guardadas directamente desde YouTube Shorts, vídeos o páginas web, con **sincronización automática a Google Drive para NotebookLM / Gemini**.
 
-El sistema procesa periódicamente tandas de recetas en segundo plano (por defecto 10 por semana), extrayendo ingredientes, instrucciones paso a paso, etiquetas normalizadas, asignando emojis culinarios y embebiendo el vídeo original en la propia página de Notion.
+El sistema procesa periódicamente tandas de recetas en segundo plano (por defecto 10 por semana), extrayendo ingredientes, instrucciones paso a paso, etiquetas normalizadas, asignando emojis culinarios y embebiendo el vídeo original en la propia página de Notion. Al finalizar cada tanda, actualiza un documento en Google Drive para que tu cuaderno de **NotebookLM** tenga siempre todas las recetas al día.
 
 ---
 
@@ -25,6 +25,12 @@ El sistema procesa periódicamente tandas de recetas en segundo plano (por defec
        │
        ▼
 [API de Notion] (Actualiza propiedades, bloques de la página y marca Procesado = Marcado)
+       │
+       ▼
+[Sincronización Google Drive] (Actualiza recetas_completas.md en la carpeta "Recetas en Notion")
+       │
+       ▼
+[Google NotebookLM / Gemini] (Auto-sincronizado como fuente de Drive en tiempo real)
 ```
 
 ---
@@ -34,6 +40,7 @@ El sistema procesa periódicamente tandas de recetas en segundo plano (por defec
 1. **Python 3.10+** (solo utiliza bibliotecas estándar de Python: `urllib`, `json`, `subprocess`, etc.; no requiere instalar paquetes adicionales con `pip`).
 2. **Cuenta de Notion** y un **Token de Integración Interna** (*Internal Integration Token*).
 3. **Google Antigravity** (opcional para la automatización desatendida mediante MCP / Sidecars) o ejecución manual por línea de comandos.
+4. **Google Drive & NotebookLM** (opcional, para sincronizar tus recetas y consultarlas mediante IA).
 
 ---
 
@@ -57,6 +64,19 @@ Para que los enlaces se guarden correctamente al pulsar **"Compartir"** desde la
 
 ---
 
+## 📚 Sincronización con Google Drive y NotebookLM
+
+NotebookLM sincroniza automáticamente las fuentes alojadas en **Google Drive** en tiempo real (a diferencia de los enlaces web directos a Notion, que solo toman una instantánea estática).
+
+1. El sistema actualiza un archivo consolidado llamado `recetas_completas.md` dentro de tu carpeta **"Recetas en Notion"** en Google Drive cada vez que se procesa una tanda.
+2. En **NotebookLM**:
+   - Abre tu cuaderno de recetas.
+   - Añade una nueva fuente -> selecciona **Google Drive**.
+   - Elige el archivo `recetas_completas.md` ubicado en la carpeta `Recetas en Notion`.
+3. A partir de ese momento, cada vez que el script procese nuevas recetas en Notion, el archivo de Google Drive se actualizará y **NotebookLM reflejará los cambios automáticamente** sin que tengas que volver a importar la fuente.
+
+---
+
 ## ⚙️ Instalación y Configuración
 
 ### 1. Clonar el repositorio
@@ -74,6 +94,10 @@ Edita `.env` con tus credenciales:
 ```env
 NOTION_TOKEN=ntn_tu_token_aqui
 NOTION_DATABASE_ID=tu_database_id_aqui
+
+# Sincronización opcional con Google Drive para NotebookLM:
+GDRIVE_FOLDER_ID=id_de_tu_carpeta_en_drive
+GDRIVE_FILE_ID=id_de_tu_archivo_en_drive
 ```
 
 * **¿Cómo obtener el `NOTION_DATABASE_ID`?**
@@ -86,7 +110,7 @@ NOTION_DATABASE_ID=tu_database_id_aqui
 ## 🚀 Modos de Uso
 
 ### Opción A: Servidor MCP en Antigravity (Recomendado)
-El proyecto incluye un servidor MCP stdio ([notion_recetas_mcp.py](notion_recetas_mcp.py)) que ejecuta las peticiones a la API de Notion y YouTube directamente desde el entorno anfitrión de Antigravity (sin restricciones de sandbox).
+El proyecto incluye un servidor MCP stdio ([notion_recetas_mcp.py](notion_recetas_mcp.py)) que ejecuta las peticiones a la API de Notion, YouTube y la sincronización con Google Drive directamente desde el entorno anfitrión de Antigravity (sin restricciones de sandbox).
 
 1. Añade el servidor a tu archivo `mcp_config.json` (ubicado en `~/.gemini/config/mcp_config.json`):
 ```json
@@ -113,7 +137,7 @@ El proyecto incluye un servidor MCP stdio ([notion_recetas_mcp.py](notion_receta
   ],
   "restart_policy": "always",
   "display_name": "Estandarizar 10 Recetas en Notion (Semanal)",
-  "description": "Comprueba silenciosamente cada hora (0 tokens) si la semana actual ya se procesó; activa el agente solo una vez a la semana para estandarizar 10 recetas.",
+  "description": "Comprueba silenciosamente cada hora (0 tokens) si la semana actual ya se procesó; activa el agente solo una vez a la semana para estandarizar 10 recetas y sincronizarlas con Google Drive para NotebookLM.",
   "agent_permissions": {
     "workspace_uris": [
       "file:///c:/ruta/completa/al/proyecto"
@@ -154,8 +178,8 @@ También puedes consultar y aplicar los cambios manualmente mediante el script C
 
 ```text
 ├── .env.example             # Plantilla de variables de entorno (sin credenciales)
-├── .gitignore               # Excluye .env, registros, cachés y estados locales
-├── notion_recetas_mcp.py    # Servidor MCP stdio con herramientas check_weekly_batch y apply_weekly_batch
+├── .gitignore               # Excluye .env, registros, cachés, estados locales y exportaciones
+├── notion_recetas_mcp.py    # Servidor MCP stdio con tools y auto-sincronización con Drive
 ├── notion_weekly_batch.py   # Script CLI para consultar y aplicar tandas de recetas en Notion
 ├── trigger_if_needed.py     # Guardián de ejecución: 0 tokens si la semana ya fue completada
 ├── weekly_state.json        # Registro de la última semana ISO procesada (ignorado por Git)
@@ -165,5 +189,5 @@ También puedes consultar y aplicar los cambios manualmente mediante el script C
 ---
 
 ## 🔒 Seguridad
-- Nunca subas el archivo `.env` ni claves reales a GitHub.
-- El archivo `.gitignore` ya está configurado para evitar publicar credenciales y archivos de estado local.
+- Nunca subas el archivo `.env`, IDs de Drive ni credenciales reales a GitHub.
+- El archivo `.gitignore` ya está configurado para evitar publicar credenciales, archivos de exportación y estados locales.
