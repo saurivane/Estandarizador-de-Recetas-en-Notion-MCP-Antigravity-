@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+.env.*
+
+# Módulo y configuración independiente multiusuario (amiga)
+multi_amiga/
 
 # Archivo de exportación local para Drive
 recetas_completas.md
