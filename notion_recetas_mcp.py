@@ -106,7 +106,7 @@ def check_weekly_batch(force=False):
             'message': f'La tanda semanal para {week_key} ya fue procesada.'
         }
 
-    token, db_id = load_config()
+    token, db_id, _ = load_config()
     if not token or not db_id:
         return {
             'status': 'ERROR_MISSING_CONFIG',
@@ -350,11 +350,13 @@ def sync_to_gdrive(token, db_id, gdrive_file_id):
             f.write(full_doc)
 
         # 2. Update file in Google Drive via gdrive CLI
+        gdrive_cmd = 'gdrive.cmd' if os.name == 'nt' else 'gdrive'
         res = subprocess.run(
-            ['gdrive', 'mutate', 'update', gdrive_file_id, EXPORT_FILE_PATH],
+            [gdrive_cmd, 'mutate', 'update', gdrive_file_id, EXPORT_FILE_PATH],
             capture_output=True,
             text=True,
-            encoding='utf-8'
+            encoding='utf-8',
+            shell=True if os.name == 'nt' else False
         )
         return {
             'status': 'SUCCESS' if res.returncode == 0 else 'ERROR',
