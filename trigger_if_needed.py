@@ -3,7 +3,8 @@
 Gatekeeper script for the Weekly Notion Recipes Standardization sidecar.
 Runs in 0.05s locally with ZERO AI tokens and ZERO chat conversations if the current ISO week
 has already been processed in weekly_state.json.
-Only when a new week starts (and has not been processed yet) does it invoke `agentapi.bat new-conversation`.
+Only when a new week starts (and has not been processed yet, or --force is passed)
+does it invoke `agentapi new-conversation`.
 """
 import datetime
 import json
@@ -37,8 +38,9 @@ def current_iso_week():
 
 
 def main():
+    force = '--force' in sys.argv
     week_key = current_iso_week()
-    if os.path.exists(STATE_PATH):
+    if not force and os.path.exists(STATE_PATH):
         try:
             with open(STATE_PATH, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -48,8 +50,9 @@ def main():
         except Exception:
             pass
 
-    # Not done this week yet: trigger the agent conversation!
-    res = subprocess.run([r'C:/Users/sauri/.gemini/antigravity/bin\agentapi.BAT', shell=True, 'new-conversation', '--', PROMPT])
+    # Launch agentapi new-conversation on Windows
+    agentapi_cmd = 'agentapi.bat' if os.name == 'nt' else 'agentapi'
+    res = subprocess.run([agentapi_cmd, 'new-conversation', '--', PROMPT], shell=True if os.name == 'nt' else False)
     return res.returncode
 
 
